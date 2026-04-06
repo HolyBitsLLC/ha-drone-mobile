@@ -1,6 +1,7 @@
 """Test fixtures for DroneMobile integration tests."""
 from __future__ import annotations
 
+import importlib
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -28,9 +29,23 @@ _MOCK_MODULES = [
     "drone_mobile.exceptions",
 ]
 
+_installed_mocks: set[str] = set()
+
+
+def _ensure_module_or_mock(mod_name: str) -> None:
+    """Use real module when importable; fall back to a mock when missing."""
+    if mod_name in sys.modules:
+        return
+    try:
+        importlib.import_module(mod_name)
+        return
+    except ModuleNotFoundError:
+        sys.modules[mod_name] = MagicMock()
+        _installed_mocks.add(mod_name)
+
+
 for _mod_name in _MOCK_MODULES:
-    if _mod_name not in sys.modules:
-        sys.modules[_mod_name] = MagicMock()
+    _ensure_module_or_mock(_mod_name)
 
 # Provide real base classes for entities so multiple-inheritance doesn't cause
 # metaclass conflicts with MagicMock.
@@ -44,10 +59,15 @@ class _StubEntity:
         return cls
 
 
-sys.modules["homeassistant.components.sensor"].SensorEntity = _StubEntity
-sys.modules["homeassistant.components.sensor"].SensorStateClass = MagicMock()
-sys.modules["homeassistant.helpers.update_coordinator"].CoordinatorEntity = _StubEntity
-sys.modules["homeassistant.helpers.device_registry"].DeviceInfo = dict
+if "homeassistant.components.sensor" in _installed_mocks:
+    sys.modules["homeassistant.components.sensor"].SensorEntity = _StubEntity
+    sys.modules["homeassistant.components.sensor"].SensorStateClass = MagicMock()
+
+if "homeassistant.helpers.update_coordinator" in _installed_mocks:
+    sys.modules["homeassistant.helpers.update_coordinator"].CoordinatorEntity = _StubEntity
+
+if "homeassistant.helpers.device_registry" in _installed_mocks:
+    sys.modules["homeassistant.helpers.device_registry"].DeviceInfo = dict
 
 
 @pytest.fixture
