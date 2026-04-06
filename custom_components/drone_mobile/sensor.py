@@ -1,6 +1,7 @@
 """Sensor platform for DroneMobile."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -18,6 +19,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util.dt import parse_datetime
 
 from .const import (
     CONF_SERVICE_INTERVALS,
@@ -126,7 +128,7 @@ class DroneMobileSensor(DroneMobileEntity, SensorEntity):
         self._units = units
 
     @property
-    def native_value(self) -> float | str | None:
+    def native_value(self) -> float | str | datetime | None:
         """Return the sensor value."""
         status = self.coordinator.data.get("status", {})
         value = status.get(self.entity_description.key)
@@ -134,6 +136,13 @@ class DroneMobileSensor(DroneMobileEntity, SensorEntity):
             return None
 
         key = self.entity_description.key
+
+        # Timestamp sensors must return datetime objects, not strings.
+        if key == "last_updated":
+            if isinstance(value, datetime):
+                return value
+            dt = parse_datetime(str(value))
+            return dt
 
         # Unit conversions
         if key == "odometer" and value is not None:
