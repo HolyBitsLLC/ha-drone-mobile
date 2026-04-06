@@ -5,8 +5,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from custom_components.drone_mobile.const import DOMAIN
-
 
 @pytest.fixture
 def mock_vehicle():
