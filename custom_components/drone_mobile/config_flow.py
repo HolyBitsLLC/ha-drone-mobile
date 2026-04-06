@@ -173,9 +173,25 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Show the options menu."""
-        return self.async_show_menu(
+        if user_input is not None:
+            next_step = user_input.get("next_step")
+            if next_step == "general":
+                return await self.async_step_general()
+            if next_step == "service_intervals":
+                return await self.async_step_service_intervals()
+
+        return self.async_show_form(
             step_id="init",
-            menu_options=["general", "service_intervals"],
+            data_schema=vol.Schema(
+                {
+                    vol.Required("next_step", default="general"): vol.In(
+                        {
+                            "general": "General Settings",
+                            "service_intervals": "Service Intervals",
+                        }
+                    ),
+                }
+            ),
         )
 
     async def async_step_general(
@@ -211,14 +227,40 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Show the service intervals management menu."""
-        menu_options = ["add_service_interval"]
-        if self._service_intervals:
-            menu_options.append("remove_service_interval")
-        menu_options.append("done_service_intervals")
+        if user_input is not None:
+            action = user_input.get("action")
+            if action == "add":
+                return await self.async_step_add_service_interval()
+            if action == "remove":
+                return await self.async_step_remove_service_interval()
+            if action == "done":
+                return self.async_create_entry(
+                    title="", data=self._build_options()
+                )
 
-        return self.async_show_menu(
+        actions = {"add": "Add Service Interval", "done": "Save & Close"}
+        if self._service_intervals:
+            actions = {
+                "add": "Add Service Interval",
+                "remove": "Remove Service Interval",
+                "done": "Save & Close",
+            }
+
+        desc = "Current intervals: " + (
+            ", ".join(
+                f"{s['name']} (every {s['interval_miles']} mi)"
+                for s in self._service_intervals
+            )
+            if self._service_intervals
+            else "None configured"
+        )
+
+        return self.async_show_form(
             step_id="service_intervals",
-            menu_options=menu_options,
+            description_placeholders={"intervals": desc},
+            data_schema=vol.Schema(
+                {vol.Required("action", default="add"): vol.In(actions)}
+            ),
         )
 
     async def async_step_add_service_interval(
@@ -281,12 +323,4 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
             data_schema=vol.Schema(
                 {vol.Required("name"): vol.In(interval_names)}
             ),
-        )
-
-    async def async_step_done_service_intervals(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Save and finish service interval editing."""
-        return self.async_create_entry(
-            title="", data=self._build_options()
         )
