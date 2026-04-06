@@ -4,16 +4,9 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.core import HomeAssistant
 
 from custom_components.drone_mobile.coordinator import DroneMobileCoordinator
-
-
-@pytest.fixture
-def mock_hass():
-    """Return a mock Home Assistant instance."""
-    hass = MagicMock()
-    hass.async_add_executor_job = AsyncMock(side_effect=lambda func, *args: func(*args))
-    return hass
 
 
 @pytest.fixture
@@ -77,8 +70,7 @@ def mock_vehicle(mock_vehicle_status, mock_vehicle_info):
     return vehicle
 
 
-@pytest.mark.asyncio
-async def test_coordinator_update(mock_hass, mock_entry, mock_vehicle):
+async def test_coordinator_update(hass: HomeAssistant, mock_entry, mock_vehicle):
     """Test coordinator fetches and normalizes data."""
     with patch(
         "custom_components.drone_mobile.coordinator.DroneMobileClient"
@@ -87,7 +79,7 @@ async def test_coordinator_update(mock_hass, mock_entry, mock_vehicle):
         client.get_vehicle.return_value = mock_vehicle
         mock_cls.return_value = client
 
-        coordinator = DroneMobileCoordinator(mock_hass, mock_entry)
+        coordinator = DroneMobileCoordinator(hass, mock_entry)
         data = await coordinator._async_update_data()
 
         assert data["vehicle_id"] == "12345"
@@ -103,8 +95,9 @@ async def test_coordinator_update(mock_hass, mock_entry, mock_vehicle):
         assert data["info"]["year"] == 2023
 
 
-@pytest.mark.asyncio
-async def test_coordinator_update_no_location(mock_hass, mock_entry, mock_vehicle):
+async def test_coordinator_update_no_location(
+    hass: HomeAssistant, mock_entry, mock_vehicle
+):
     """Test coordinator handles missing GPS correctly."""
     mock_vehicle.get_status.return_value.location = None
 
@@ -115,14 +108,15 @@ async def test_coordinator_update_no_location(mock_hass, mock_entry, mock_vehicl
         client.get_vehicle.return_value = mock_vehicle
         mock_cls.return_value = client
 
-        coordinator = DroneMobileCoordinator(mock_hass, mock_entry)
+        coordinator = DroneMobileCoordinator(hass, mock_entry)
         data = await coordinator._async_update_data()
 
         assert data["location"] is None
 
 
-@pytest.mark.asyncio
-async def test_coordinator_send_command(mock_hass, mock_entry, mock_vehicle):
+async def test_coordinator_send_command(
+    hass: HomeAssistant, mock_entry, mock_vehicle
+):
     """Test coordinator sends commands to the vehicle."""
     with patch(
         "custom_components.drone_mobile.coordinator.DroneMobileClient"
@@ -131,7 +125,7 @@ async def test_coordinator_send_command(mock_hass, mock_entry, mock_vehicle):
         client.get_vehicle.return_value = mock_vehicle
         mock_cls.return_value = client
 
-        coordinator = DroneMobileCoordinator(mock_hass, mock_entry)
+        coordinator = DroneMobileCoordinator(hass, mock_entry)
         # Prevent actual refresh
         coordinator.async_request_refresh = AsyncMock()
 
@@ -141,8 +135,9 @@ async def test_coordinator_send_command(mock_hass, mock_entry, mock_vehicle):
         assert result["success"] is True
 
 
-@pytest.mark.asyncio
-async def test_coordinator_send_unknown_command(mock_hass, mock_entry, mock_vehicle):
+async def test_coordinator_send_unknown_command(
+    hass: HomeAssistant, mock_entry, mock_vehicle
+):
     """Test coordinator rejects unknown commands."""
     with patch(
         "custom_components.drone_mobile.coordinator.DroneMobileClient"
@@ -151,14 +146,13 @@ async def test_coordinator_send_unknown_command(mock_hass, mock_entry, mock_vehi
         client.get_vehicle.return_value = mock_vehicle
         mock_cls.return_value = client
 
-        coordinator = DroneMobileCoordinator(mock_hass, mock_entry)
+        coordinator = DroneMobileCoordinator(hass, mock_entry)
 
         with pytest.raises(ValueError, match="Unknown command"):
             await coordinator.async_send_command("invalid_cmd")
 
 
-@pytest.mark.asyncio
-async def test_coordinator_auth_error(mock_hass, mock_entry):
+async def test_coordinator_auth_error(hass: HomeAssistant, mock_entry):
     """Test coordinator raises UpdateFailed on auth error."""
     from drone_mobile.exceptions import AuthenticationError
     from homeassistant.helpers.update_coordinator import UpdateFailed
@@ -170,7 +164,7 @@ async def test_coordinator_auth_error(mock_hass, mock_entry):
         client.get_vehicle.side_effect = AuthenticationError("bad creds")
         mock_cls.return_value = client
 
-        coordinator = DroneMobileCoordinator(mock_hass, mock_entry)
+        coordinator = DroneMobileCoordinator(hass, mock_entry)
 
         with pytest.raises(UpdateFailed, match="Authentication failed"):
             await coordinator._async_update_data()
