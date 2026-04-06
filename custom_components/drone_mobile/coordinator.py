@@ -1,12 +1,9 @@
 """DataUpdateCoordinator for DroneMobile."""
 from __future__ import annotations
 
-from datetime import timedelta
 import logging
+from datetime import timedelta
 from typing import Any
-
-from drone_mobile import DroneMobileClient
-from drone_mobile.exceptions import AuthenticationError
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
@@ -15,6 +12,9 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
 )
+
+from drone_mobile import DroneMobileClient
+from drone_mobile.exceptions import AuthenticationError
 
 from .const import CONF_UPDATE_INTERVAL, CONF_VEHICLE_ID, DEFAULT_UPDATE_INTERVAL
 
