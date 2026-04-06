@@ -21,6 +21,7 @@ _MOCK_MODULES = [
     "homeassistant.helpers.device_registry",
     "homeassistant.helpers.entity",
     "homeassistant.helpers.entity_registry",
+    "homeassistant.helpers.selector",
     "homeassistant.helpers.update_coordinator",
     "voluptuous",
     "drone_mobile",

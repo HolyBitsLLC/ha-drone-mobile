@@ -11,6 +11,7 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.selector import TextSelector, TextSelectorConfig
 
 from drone_mobile import DroneMobileClient
 from drone_mobile.exceptions import AuthenticationError
@@ -660,7 +661,11 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
             step_id="import_csv",
             description_placeholders={"csv_example": sample},
             data_schema=vol.Schema(
-                {vol.Required("csv_data"): str}
+                {
+                    vol.Required("csv_data"): TextSelector(
+                        TextSelectorConfig(multiline=True)
+                    )
+                }
             ),
             errors=errors,
         )
