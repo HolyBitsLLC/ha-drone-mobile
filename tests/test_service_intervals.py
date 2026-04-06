@@ -398,6 +398,24 @@ def test_csv_parse_no_header():
     assert "No data rows" in err or "No header" in err
 
 
+def test_csv_parse_headerless_data():
+    """Test CSV without header row auto-detects and parses correctly."""
+    csv_text = (
+        "Engine Oil,mileage,25000,50163,,,,\n"
+        "Fuel Filter,mileage,15000,50163,,,,\n"
+        "Front-End Grease,mileage,5000,50163,,,,"
+    )
+    intervals, err = _parse_csv_intervals(csv_text)
+    assert err is None
+    assert len(intervals) == 3
+    assert intervals[0]["name"] == "Engine Oil"
+    assert intervals[0]["interval_miles"] == 25000
+    assert intervals[0]["last_serviced_mileage"] == 50163
+    assert intervals[1]["name"] == "Fuel Filter"
+    assert intervals[2]["name"] == "Front-End Grease"
+    assert intervals[2]["interval_miles"] == 5000
+
+
 def test_csv_parse_missing_name():
     """Test CSV with missing name returns error."""
     csv_text = (
@@ -435,8 +453,8 @@ def test_csv_parse_bad_miles():
 
 
 def test_csv_parse_missing_required_columns():
-    """Test CSV missing required columns returns error."""
-    csv_text = "foo,bar\n1,2"
+    """Test CSV with explicit header missing required columns returns error."""
+    csv_text = "name,interval_miles\nOil Change,5000"
     intervals, err = _parse_csv_intervals(csv_text)
     assert err is not None
     assert "'name' and 'type'" in err

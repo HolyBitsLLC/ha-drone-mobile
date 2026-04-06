@@ -58,11 +58,12 @@ async def _validate_credentials(
 VALID_TYPES = {INTERVAL_TYPE_MILEAGE, INTERVAL_TYPE_TIME}
 VALID_PERIODS = {TIME_PERIOD_DAYS, TIME_PERIOD_WEEKS, TIME_PERIOD_MONTHS}
 
-# Required CSV columns
-_CSV_COLUMNS = {
-    "name", "type", "interval_miles", "last_serviced_mileage",
-    "interval_value", "period", "recurring", "last_serviced_date",
-}
+# Expected CSV column order (used to prepend header when missing)
+_CSV_HEADER = (
+    "name,type,interval_miles,last_serviced_mileage,"
+    "interval_value,period,recurring,last_serviced_date"
+)
+_CSV_COLUMNS = set(_CSV_HEADER.split(","))
 
 
 def _parse_csv_intervals(
@@ -72,6 +73,13 @@ def _parse_csv_intervals(
 
     Returns (intervals, error_message).  error_message is None on success.
     """
+    # Auto-detect headerless CSV: if the first non-empty line's first field
+    # isn't a known column name, prepend the expected header.
+    first_line = csv_text.strip().splitlines()[0] if csv_text.strip() else ""
+    first_field = first_line.split(",")[0].strip().lower() if first_line else ""
+    if first_field and first_field not in _CSV_COLUMNS:
+        csv_text = _CSV_HEADER + "\n" + csv_text
+
     reader = csv.DictReader(io.StringIO(csv_text))
     if not reader.fieldnames:
         return [], "No header row found"
