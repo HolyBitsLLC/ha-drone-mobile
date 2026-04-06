@@ -1,9 +1,52 @@
 """Test fixtures for DroneMobile integration tests."""
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+# ---------------------------------------------------------------------------
+# Mock homeassistant and third-party modules so tests run without HA installed
+# ---------------------------------------------------------------------------
+_MOCK_MODULES = [
+    "homeassistant",
+    "homeassistant.components",
+    "homeassistant.components.sensor",
+    "homeassistant.config_entries",
+    "homeassistant.const",
+    "homeassistant.core",
+    "homeassistant.data_entry_flow",
+    "homeassistant.helpers",
+    "homeassistant.helpers.device_registry",
+    "homeassistant.helpers.entity",
+    "homeassistant.helpers.entity_registry",
+    "homeassistant.helpers.update_coordinator",
+    "voluptuous",
+    "drone_mobile",
+    "drone_mobile.exceptions",
+]
+
+for _mod_name in _MOCK_MODULES:
+    if _mod_name not in sys.modules:
+        sys.modules[_mod_name] = MagicMock()
+
+# Provide real base classes for entities so multiple-inheritance doesn't cause
+# metaclass conflicts with MagicMock.
+
+
+class _StubEntity:
+    """Minimal stand-in for HA entity base classes."""
+    _attr_has_entity_name = False
+
+    def __class_getitem__(cls, item):
+        return cls
+
+
+sys.modules["homeassistant.components.sensor"].SensorEntity = _StubEntity
+sys.modules["homeassistant.components.sensor"].SensorStateClass = MagicMock()
+sys.modules["homeassistant.helpers.update_coordinator"].CoordinatorEntity = _StubEntity
+sys.modules["homeassistant.helpers.device_registry"].DeviceInfo = dict
 
 
 @pytest.fixture

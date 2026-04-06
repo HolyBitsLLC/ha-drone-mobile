@@ -106,10 +106,19 @@
         "data": {
           "name": "Service to Remove"
         }
+      },
+      "import_csv": {
+        "title": "Import Service Intervals from CSV",
+        "description": "Paste CSV data with columns: name, type, interval_miles, last_serviced_mileage, interval_value, period, recurring, last_serviced_date.\n\nExample:\n{csv_example}\n\nDuplicate names will be skipped.",
+        "data": {
+          "csv_data": "CSV Data"
+        }
       }
     },
     "error": {
-      "duplicate_name": "A service interval with this name already exists."
+      "duplicate_name": "A service interval with this name already exists.",
+      "empty_csv": "No CSV data provided.",
+      "invalid_csv": "Invalid CSV format. Check column names and data types."
     }
   }
 }

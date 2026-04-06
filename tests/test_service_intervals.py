@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 from unittest.mock import MagicMock
 
+from custom_components.drone_mobile import _migrate_service_intervals
+from custom_components.drone_mobile.config_flow import _parse_csv_intervals
 from custom_components.drone_mobile.const import (
     INTERVAL_TYPE_MILEAGE,
     INTERVAL_TYPE_TIME,
@@ -335,3 +337,190 @@ def test_no_duplicate_different_name():
     new_name = "Tire Rotation"
     existing_names = {s["name"].lower() for s in existing}
     assert new_name.lower() not in existing_names
+
+
+# --- CSV parsing tests ---
+
+
+def test_csv_parse_mileage():
+    """Test parsing mileage-based CSV rows."""
+    csv_text = (
+        "name,type,interval_miles,last_serviced_mileage,"
+        "interval_value,period,recurring,last_serviced_date\n"
+        "Oil Change,mileage,5000,43000,,,,"
+    )
+    intervals, err = _parse_csv_intervals(csv_text)
+    assert err is None
+    assert len(intervals) == 1
+    assert intervals[0]["name"] == "Oil Change"
+    assert intervals[0]["type"] == INTERVAL_TYPE_MILEAGE
+    assert intervals[0]["interval_miles"] == 5000
+    assert intervals[0]["last_serviced_mileage"] == 43000
+
+
+def test_csv_parse_time():
+    """Test parsing time-based CSV rows."""
+    csv_text = (
+        "name,type,interval_miles,last_serviced_mileage,"
+        "interval_value,period,recurring,last_serviced_date\n"
+        "Inspection,time,,,12,months,true,2026-01-15"
+    )
+    intervals, err = _parse_csv_intervals(csv_text)
+    assert err is None
+    assert len(intervals) == 1
+    assert intervals[0]["type"] == INTERVAL_TYPE_TIME
+    assert intervals[0]["interval_value"] == 12
+    assert intervals[0]["period"] == "months"
+    assert intervals[0]["recurring"] is True
+    assert intervals[0]["last_serviced_date"] == "2026-01-15"
+
+
+def test_csv_parse_mixed():
+    """Test parsing CSV with both types."""
+    csv_text = (
+        "name,type,interval_miles,last_serviced_mileage,"
+        "interval_value,period,recurring,last_serviced_date\n"
+        "Oil Change,mileage,5000,43000,,,,\n"
+        "Inspection,time,,,12,months,true,2026-01-15"
+    )
+    intervals, err = _parse_csv_intervals(csv_text)
+    assert err is None
+    assert len(intervals) == 2
+    assert intervals[0]["type"] == INTERVAL_TYPE_MILEAGE
+    assert intervals[1]["type"] == INTERVAL_TYPE_TIME
+
+
+def test_csv_parse_no_header():
+    """Test CSV with no header returns error."""
+    csv_text = ""
+    intervals, err = _parse_csv_intervals(csv_text)
+    assert err is not None
+    assert "No data rows" in err or "No header" in err
+
+
+def test_csv_parse_missing_name():
+    """Test CSV with missing name returns error."""
+    csv_text = (
+        "name,type,interval_miles,last_serviced_mileage,"
+        "interval_value,period,recurring,last_serviced_date\n"
+        ",mileage,5000,0,,,,"
+    )
+    intervals, err = _parse_csv_intervals(csv_text)
+    assert err is not None
+    assert "missing name" in err
+
+
+def test_csv_parse_bad_type():
+    """Test CSV with invalid type returns error."""
+    csv_text = (
+        "name,type,interval_miles,last_serviced_mileage,"
+        "interval_value,period,recurring,last_serviced_date\n"
+        "Oil Change,badtype,5000,0,,,,"
+    )
+    intervals, err = _parse_csv_intervals(csv_text)
+    assert err is not None
+    assert "must be 'mileage' or 'time'" in err
+
+
+def test_csv_parse_bad_miles():
+    """Test CSV with non-integer miles returns error."""
+    csv_text = (
+        "name,type,interval_miles,last_serviced_mileage,"
+        "interval_value,period,recurring,last_serviced_date\n"
+        "Oil Change,mileage,abc,0,,,,"
+    )
+    intervals, err = _parse_csv_intervals(csv_text)
+    assert err is not None
+    assert "integer" in err
+
+
+def test_csv_parse_missing_required_columns():
+    """Test CSV missing required columns returns error."""
+    csv_text = "foo,bar\n1,2"
+    intervals, err = _parse_csv_intervals(csv_text)
+    assert err is not None
+    assert "'name' and 'type'" in err
+
+
+def test_csv_parse_defaults():
+    """Test CSV uses defaults for empty optional fields."""
+    csv_text = (
+        "name,type,interval_miles,last_serviced_mileage,"
+        "interval_value,period,recurring,last_serviced_date\n"
+        "Oil Change,mileage,,,,,,"
+    )
+    intervals, err = _parse_csv_intervals(csv_text)
+    assert err is None
+    assert intervals[0]["interval_miles"] == 5000
+    assert intervals[0]["last_serviced_mileage"] == 0
+
+
+def test_csv_recurring_false():
+    """Test CSV recurring=false parses correctly."""
+    csv_text = (
+        "name,type,interval_miles,last_serviced_mileage,"
+        "interval_value,period,recurring,last_serviced_date\n"
+        "One-time check,time,,,30,days,false,"
+    )
+    intervals, err = _parse_csv_intervals(csv_text)
+    assert err is None
+    assert intervals[0]["recurring"] is False
+
+
+# --- Migration tests ---
+
+
+def test_migrate_adds_type_field():
+    """Test migration backfills type field on legacy intervals."""
+    mock_hass = MagicMock()
+    mock_entry = MagicMock()
+    mock_entry.options = {
+        "units": "imperial",
+        "update_interval": 5,
+        "service_intervals": [
+            {"name": "Oil Change", "interval_miles": 5000,
+             "last_serviced_mileage": 0},
+        ],
+    }
+
+    _migrate_service_intervals(mock_hass, mock_entry)
+
+    mock_hass.config_entries.async_update_entry.assert_called_once()
+    call_kwargs = (
+        mock_hass.config_entries.async_update_entry.call_args
+    )
+    new_options = call_kwargs[1]["options"]
+    assert new_options["service_intervals"][0]["type"] == "mileage"
+
+
+def test_migrate_skips_already_typed():
+    """Test migration does not update intervals that already have type."""
+    mock_hass = MagicMock()
+    mock_entry = MagicMock()
+    mock_entry.options = {
+        "units": "imperial",
+        "update_interval": 5,
+        "service_intervals": [
+            {"name": "Oil Change", "type": "mileage",
+             "interval_miles": 5000, "last_serviced_mileage": 0},
+        ],
+    }
+
+    _migrate_service_intervals(mock_hass, mock_entry)
+
+    mock_hass.config_entries.async_update_entry.assert_not_called()
+
+
+def test_migrate_no_intervals():
+    """Test migration is a no-op when no intervals exist."""
+    mock_hass = MagicMock()
+    mock_entry = MagicMock()
+    mock_entry.options = {
+        "units": "imperial",
+        "update_interval": 5,
+        "service_intervals": [],
+    }
+
+    _migrate_service_intervals(mock_hass, mock_entry)
+
+    mock_hass.config_entries.async_update_entry.assert_not_called()

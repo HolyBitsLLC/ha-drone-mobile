@@ -1,6 +1,8 @@
 """Config flow for DroneMobile integration."""
 from __future__ import annotations
 
+import csv
+import io
 import logging
 from typing import Any
 
@@ -50,6 +52,100 @@ async def _validate_credentials(
         if hasattr(client, "close"):
             await hass.async_add_executor_job(client.close)
     return vehicles
+
+
+VALID_TYPES = {INTERVAL_TYPE_MILEAGE, INTERVAL_TYPE_TIME}
+VALID_PERIODS = {TIME_PERIOD_DAYS, TIME_PERIOD_WEEKS, TIME_PERIOD_MONTHS}
+
+# Required CSV columns
+_CSV_COLUMNS = {
+    "name", "type", "interval_miles", "last_serviced_mileage",
+    "interval_value", "period", "recurring", "last_serviced_date",
+}
+
+
+def _parse_csv_intervals(
+    csv_text: str,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Parse CSV text into a list of service interval dicts.
+
+    Returns (intervals, error_message).  error_message is None on success.
+    """
+    reader = csv.DictReader(io.StringIO(csv_text))
+    if not reader.fieldnames:
+        return [], "No header row found"
+
+    # Normalize header names
+    fields = {f.strip().lower() for f in reader.fieldnames}
+    if "name" not in fields or "type" not in fields:
+        return [], "CSV must have at least 'name' and 'type' columns"
+
+    intervals: list[dict[str, Any]] = []
+    for row_num, row in enumerate(reader, start=2):
+        # Normalize keys
+        row = {k.strip().lower(): v.strip() if v else "" for k, v in row.items()}
+        name = row.get("name", "").strip()
+        if not name:
+            return [], f"Row {row_num}: missing name"
+
+        interval_type = row.get("type", "mileage").lower()
+        if interval_type not in VALID_TYPES:
+            return [], (
+                f"Row {row_num} ({name}): "
+                f"type must be 'mileage' or 'time', got '{interval_type}'"
+            )
+
+        if interval_type == INTERVAL_TYPE_MILEAGE:
+            try:
+                miles = int(row.get("interval_miles") or "5000")
+            except ValueError:
+                return [], (
+                    f"Row {row_num} ({name}): "
+                    f"interval_miles must be an integer"
+                )
+            try:
+                last_mi = int(row.get("last_serviced_mileage") or "0")
+            except ValueError:
+                return [], (
+                    f"Row {row_num} ({name}): "
+                    f"last_serviced_mileage must be an integer"
+                )
+            intervals.append({
+                "name": name,
+                "type": INTERVAL_TYPE_MILEAGE,
+                "interval_miles": miles,
+                "last_serviced_mileage": last_mi,
+            })
+        else:
+            try:
+                value = int(row.get("interval_value") or "6")
+            except ValueError:
+                return [], (
+                    f"Row {row_num} ({name}): "
+                    f"interval_value must be an integer"
+                )
+            period = (row.get("period") or "months").lower()
+            if period not in VALID_PERIODS:
+                return [], (
+                    f"Row {row_num} ({name}): "
+                    f"period must be days/weeks/months, got '{period}'"
+                )
+            recurring_str = (row.get("recurring") or "true").lower()
+            recurring = recurring_str in ("true", "1", "yes")
+            last_date = row.get("last_serviced_date", "")
+            intervals.append({
+                "name": name,
+                "type": INTERVAL_TYPE_TIME,
+                "interval_value": value,
+                "period": period,
+                "recurring": recurring,
+                "last_serviced_date": last_date,
+            })
+
+    if not intervals:
+        return [], "No data rows found in CSV"
+
+    return intervals, None
 
 
 class DroneMobileConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -255,6 +351,8 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
                 return await self.async_step_select_edit_interval()
             if action == "remove":
                 return await self.async_step_remove_service_interval()
+            if action == "import_csv":
+                return await self.async_step_import_csv()
             if action == "done":
                 return self.async_create_entry(
                     title="", data=self._build_options()
@@ -264,6 +362,7 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
         if self._service_intervals:
             actions["edit"] = "Edit Existing Interval"
             actions["remove"] = "Remove Interval"
+        actions["import_csv"] = "Import from CSV"
         actions["done"] = "Save & Close"
 
         desc = (
@@ -513,6 +612,55 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
                         default=interval.get("last_serviced_date", ""),
                     ): str,
                 }
+            ),
+            errors=errors,
+        )
+
+    # ── Import CSV flow ─────────────────────────────────────────
+
+    async def async_step_import_csv(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Import service intervals from CSV text."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            csv_text = user_input.get("csv_data", "").strip()
+            if not csv_text:
+                errors["csv_data"] = "empty_csv"
+            else:
+                parsed, error = _parse_csv_intervals(csv_text)
+                if error:
+                    errors["csv_data"] = "invalid_csv"
+                    self._csv_error_detail = error
+                else:
+                    added = 0
+                    skipped = 0
+                    for interval in parsed:
+                        if self._name_exists(interval["name"]):
+                            skipped += 1
+                        else:
+                            self._service_intervals.append(interval)
+                            added += 1
+                    _LOGGER.info(
+                        "CSV import: %d added, %d skipped (duplicate)",
+                        added,
+                        skipped,
+                    )
+                    return await self.async_step_service_intervals()
+
+        sample = (
+            "name,type,interval_miles,last_serviced_mileage,"
+            "interval_value,period,recurring,last_serviced_date\n"
+            "Oil Change,mileage,5000,43000,,,,\n"
+            "Annual Inspection,time,,,12,months,true,2026-01-15"
+        )
+
+        return self.async_show_form(
+            step_id="import_csv",
+            description_placeholders={"csv_example": sample},
+            data_schema=vol.Schema(
+                {vol.Required("csv_data"): str}
             ),
             errors=errors,
         )

@@ -7,7 +7,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
+from .const import CONF_SERVICE_INTERVALS, DOMAIN, INTERVAL_TYPE_MILEAGE
 from .coordinator import DroneMobileCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,8 +22,42 @@ PLATFORMS = [
 ]
 
 
+def _migrate_service_intervals(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Backfill 'type' field on legacy service intervals (pre-v1.2.0).
+
+    Service interval data lives in config_entry.options, which persists
+    in .storage/core.config_entries across HACS updates. This migration
+    ensures intervals created before the type field was added still work.
+    """
+    intervals = entry.options.get(CONF_SERVICE_INTERVALS, [])
+    if not intervals:
+        return
+
+    updated = False
+    new_intervals = []
+    for interval in intervals:
+        interval = dict(interval)  # don't mutate the original
+        if "type" not in interval:
+            interval["type"] = INTERVAL_TYPE_MILEAGE
+            updated = True
+        new_intervals.append(interval)
+
+    if updated:
+        new_options = dict(entry.options)
+        new_options[CONF_SERVICE_INTERVALS] = new_intervals
+        hass.config_entries.async_update_entry(entry, options=new_options)
+        _LOGGER.info(
+            "Migrated %d service intervals to include type field",
+            len(new_intervals),
+        )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up DroneMobile from a config entry."""
+    _migrate_service_intervals(hass, entry)
+
     coordinator = DroneMobileCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
 
