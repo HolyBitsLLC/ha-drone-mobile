@@ -64,7 +64,7 @@ class DroneMobileConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> DroneMobileOptionsFlow:
         """Get the options flow for this handler."""
-        return DroneMobileOptionsFlow(config_entry)
+        return DroneMobileOptionsFlow()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -154,12 +154,9 @@ class DroneMobileConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class DroneMobileOptionsFlow(config_entries.OptionsFlow):
     """Handle DroneMobile options."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+    def __init__(self) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
-        self._service_intervals: list[dict[str, Any]] = list(
-            config_entry.options.get(CONF_SERVICE_INTERVALS, [])
-        )
+        self._service_intervals: list[dict[str, Any]] = []
 
     def _build_options(self, user_data: dict[str, Any] | None = None) -> dict[str, Any]:
         """Build the full options dict preserving service intervals."""
@@ -173,6 +170,12 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Show the options menu."""
+        # Lazily load service intervals (config_entry is set by framework after __init__)
+        if not self._service_intervals and self.config_entry.options.get(CONF_SERVICE_INTERVALS):
+            self._service_intervals = list(
+                self.config_entry.options[CONF_SERVICE_INTERVALS]
+            )
+
         if user_input is not None:
             next_step = user_input.get("next_step")
             if next_step == "general":
