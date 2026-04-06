@@ -168,6 +168,26 @@ def test_service_sensor_overdue():
     assert sensor.native_value == -2000.0
 
 
+def test_service_sensor_remaining_capped_to_interval_imperial():
+    """Remaining miles must not exceed configured interval."""
+    interval = {
+        "name": "Oil Change", "type": INTERVAL_TYPE_MILEAGE,
+        "interval_miles": 5000, "last_serviced_mileage": 47000,
+    }
+    sensor = _make_mileage_sensor(interval, UNITS_IMPERIAL, 45000.0)
+    assert sensor.native_value == 5000.0
+
+
+def test_service_sensor_remaining_capped_to_interval_metric():
+    """Remaining km must not exceed interval converted to km."""
+    interval = {
+        "name": "Oil Change", "type": INTERVAL_TYPE_MILEAGE,
+        "interval_miles": 5000, "last_serviced_mileage": 47000,
+    }
+    sensor = _make_mileage_sensor(interval, UNITS_METRIC, 45000.0)
+    assert sensor.native_value == 8046.7
+
+
 def test_service_sensor_no_odometer():
     """Test sensor returns None when odometer is unavailable."""
     interval = {

@@ -111,6 +111,7 @@ class ServiceIntervalSensor(DroneMobileEntity, SensorEntity):
         interval_miles = iv.get("interval_miles", 0)
         last_serviced = iv.get("last_serviced_mileage", 0)
         miles_remaining = last_serviced + interval_miles - float(odometer)
+        miles_remaining = min(miles_remaining, float(interval_miles))
 
         if self._units == UNITS_METRIC:
             return round(miles_remaining * 1.60934, 1)
