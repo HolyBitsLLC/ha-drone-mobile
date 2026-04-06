@@ -15,6 +15,17 @@ UNITS_IMPERIAL = "imperial"
 UNITS_METRIC = "metric"
 UNIT_OPTIONS = [UNITS_IMPERIAL, UNITS_METRIC]
 
+# Service interval types
+INTERVAL_TYPE_MILEAGE = "mileage"
+INTERVAL_TYPE_TIME = "time"
+INTERVAL_TYPES = [INTERVAL_TYPE_MILEAGE, INTERVAL_TYPE_TIME]
+
+# Time interval period choices (stored as days internally)
+TIME_PERIOD_DAYS = "days"
+TIME_PERIOD_WEEKS = "weeks"
+TIME_PERIOD_MONTHS = "months"
+TIME_PERIODS = [TIME_PERIOD_DAYS, TIME_PERIOD_WEEKS, TIME_PERIOD_MONTHS]
+
 # Commands
 CMD_START = "start"
 CMD_STOP = "stop"

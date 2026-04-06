@@ -49,13 +49,56 @@
           "action": "Action"
         }
       },
-      "add_service_interval": {
-        "title": "Add Service Interval",
-        "description": "Define a recurring service based on mileage.",
+      "select_interval_type": {
+        "title": "New Service Interval",
+        "description": "Choose the type of service interval to add.",
+        "data": {
+          "interval_type": "Interval Type"
+        }
+      },
+      "add_mileage_interval": {
+        "title": "Add Mileage-Based Interval",
+        "description": "Define a service that recurs based on miles driven.",
         "data": {
           "name": "Service Name (e.g. Oil Change)",
           "interval_miles": "Interval (miles)",
           "last_serviced_mileage": "Last Serviced At (odometer miles, 0 if unknown)"
+        }
+      },
+      "add_time_interval": {
+        "title": "Add Time-Based Interval",
+        "description": "Define a service that recurs based on elapsed time.",
+        "data": {
+          "name": "Service Name (e.g. Annual Inspection)",
+          "interval_value": "Every",
+          "period": "Period",
+          "recurring": "Recurring",
+          "last_serviced_date": "Last Serviced Date (YYYY-MM-DD, blank if unknown)"
+        }
+      },
+      "select_edit_interval": {
+        "title": "Edit Service Interval",
+        "description": "Select an interval to modify.",
+        "data": {
+          "name": "Service Interval"
+        }
+      },
+      "edit_mileage_interval": {
+        "title": "Edit Mileage-Based Interval",
+        "data": {
+          "name": "Service Name",
+          "interval_miles": "Interval (miles)",
+          "last_serviced_mileage": "Last Serviced At (odometer miles)"
+        }
+      },
+      "edit_time_interval": {
+        "title": "Edit Time-Based Interval",
+        "data": {
+          "name": "Service Name",
+          "interval_value": "Every",
+          "period": "Period",
+          "recurring": "Recurring",
+          "last_serviced_date": "Last Serviced Date (YYYY-MM-DD)"
         }
       },
       "remove_service_interval": {

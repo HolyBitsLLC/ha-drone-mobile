@@ -21,6 +21,11 @@ from .const import (
     DEFAULT_UNITS,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
+    INTERVAL_TYPE_MILEAGE,
+    INTERVAL_TYPE_TIME,
+    TIME_PERIOD_DAYS,
+    TIME_PERIOD_MONTHS,
+    TIME_PERIOD_WEEKS,
     UNIT_OPTIONS,
 )
 
@@ -157,6 +162,7 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
     def __init__(self) -> None:
         """Initialize options flow."""
         self._service_intervals: list[dict[str, Any]] = []
+        self._edit_index: int | None = None
 
     def _build_options(self, user_data: dict[str, Any] | None = None) -> dict[str, Any]:
         """Build the full options dict preserving service intervals."""
@@ -166,11 +172,22 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
         base[CONF_SERVICE_INTERVALS] = self._service_intervals
         return base
 
+    def _interval_summary(self, s: dict[str, Any]) -> str:
+        """Build a human-readable summary for one interval."""
+        if s.get("type", INTERVAL_TYPE_MILEAGE) == INTERVAL_TYPE_TIME:
+            period = s.get("period", TIME_PERIOD_DAYS)
+            every = s.get("interval_value", 0)
+            recurring = "recurring" if s.get("recurring", True) else "one-time"
+            last = s.get("last_serviced_date", "never")
+            return f"{s['name']} (every {every} {period}, {recurring}, last: {last})"
+        miles = s.get("interval_miles", 0)
+        last = s.get("last_serviced_mileage", 0)
+        return f"{s['name']} (every {miles} mi, last at {last} mi)"
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Show the options menu."""
-        # Lazily load service intervals (config_entry is set by framework after __init__)
         if not self._service_intervals and self.config_entry.options.get(CONF_SERVICE_INTERVALS):
             self._service_intervals = list(
                 self.config_entry.options[CONF_SERVICE_INTERVALS]
@@ -233,7 +250,9 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             action = user_input.get("action")
             if action == "add":
-                return await self.async_step_add_service_interval()
+                return await self.async_step_select_interval_type()
+            if action == "edit":
+                return await self.async_step_select_edit_interval()
             if action == "remove":
                 return await self.async_step_remove_service_interval()
             if action == "done":
@@ -241,21 +260,18 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
                     title="", data=self._build_options()
                 )
 
-        actions = {"add": "Add Service Interval", "done": "Save & Close"}
+        actions: dict[str, str] = {"add": "Add New Interval"}
         if self._service_intervals:
-            actions = {
-                "add": "Add Service Interval",
-                "remove": "Remove Service Interval",
-                "done": "Save & Close",
-            }
+            actions["edit"] = "Edit Existing Interval"
+            actions["remove"] = "Remove Interval"
+        actions["done"] = "Save & Close"
 
-        desc = "Current intervals: " + (
-            ", ".join(
-                f"{s['name']} (every {s['interval_miles']} mi)"
-                for s in self._service_intervals
+        desc = (
+            "\n".join(
+                f"• {self._interval_summary(s)}" for s in self._service_intervals
             )
             if self._service_intervals
-            else "None configured"
+            else "No service intervals configured."
         )
 
         return self.async_show_form(
@@ -266,25 +282,48 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
             ),
         )
 
-    async def async_step_add_service_interval(
+    # ── Add flow ──────────────────────────────────────────────
+
+    async def async_step_select_interval_type(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Add a new service interval."""
+        """Choose between mileage-based or time-based interval."""
+        if user_input is not None:
+            interval_type = user_input["interval_type"]
+            if interval_type == INTERVAL_TYPE_MILEAGE:
+                return await self.async_step_add_mileage_interval()
+            return await self.async_step_add_time_interval()
+
+        return self.async_show_form(
+            step_id="select_interval_type",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("interval_type", default=INTERVAL_TYPE_MILEAGE): vol.In(
+                        {
+                            INTERVAL_TYPE_MILEAGE: "Mileage-Based",
+                            INTERVAL_TYPE_TIME: "Time-Based",
+                        }
+                    ),
+                }
+            ),
+        )
+
+    async def async_step_add_mileage_interval(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Add a mileage-based service interval."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
             name = user_input["name"].strip()
-            interval_miles = user_input["interval_miles"]
-
-            # Check for duplicate names
-            existing_names = {s["name"].lower() for s in self._service_intervals}
-            if name.lower() in existing_names:
+            if self._name_exists(name):
                 errors["name"] = "duplicate_name"
             else:
                 self._service_intervals.append(
                     {
                         "name": name,
-                        "interval_miles": interval_miles,
+                        "type": INTERVAL_TYPE_MILEAGE,
+                        "interval_miles": user_input["interval_miles"],
                         "last_serviced_mileage": user_input.get(
                             "last_serviced_mileage", 0
                         ),
@@ -293,7 +332,7 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
                 return await self.async_step_service_intervals()
 
         return self.async_show_form(
-            step_id="add_service_interval",
+            step_id="add_mileage_interval",
             data_schema=vol.Schema(
                 {
                     vol.Required("name"): str,
@@ -307,6 +346,178 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
             ),
             errors=errors,
         )
+
+    async def async_step_add_time_interval(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Add a time-based service interval."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            name = user_input["name"].strip()
+            if self._name_exists(name):
+                errors["name"] = "duplicate_name"
+            else:
+                self._service_intervals.append(
+                    {
+                        "name": name,
+                        "type": INTERVAL_TYPE_TIME,
+                        "interval_value": user_input["interval_value"],
+                        "period": user_input["period"],
+                        "recurring": user_input.get("recurring", True),
+                        "last_serviced_date": user_input.get(
+                            "last_serviced_date", ""
+                        ),
+                    }
+                )
+                return await self.async_step_service_intervals()
+
+        return self.async_show_form(
+            step_id="add_time_interval",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name"): str,
+                    vol.Required("interval_value", default=6): vol.All(
+                        vol.Coerce(int), vol.Range(min=1, max=365)
+                    ),
+                    vol.Required("period", default=TIME_PERIOD_MONTHS): vol.In(
+                        {
+                            TIME_PERIOD_DAYS: "Days",
+                            TIME_PERIOD_WEEKS: "Weeks",
+                            TIME_PERIOD_MONTHS: "Months",
+                        }
+                    ),
+                    vol.Required("recurring", default=True): bool,
+                    vol.Optional("last_serviced_date", default=""): str,
+                }
+            ),
+            errors=errors,
+        )
+
+    # ── Edit flow ─────────────────────────────────────────────
+
+    async def async_step_select_edit_interval(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Select an interval to edit."""
+        if user_input is not None:
+            name = user_input["name"]
+            for i, s in enumerate(self._service_intervals):
+                if s["name"] == name:
+                    self._edit_index = i
+                    break
+            interval = self._service_intervals[self._edit_index]
+            if interval.get("type", INTERVAL_TYPE_MILEAGE) == INTERVAL_TYPE_TIME:
+                return await self.async_step_edit_time_interval()
+            return await self.async_step_edit_mileage_interval()
+
+        interval_names = {s["name"]: s["name"] for s in self._service_intervals}
+        return self.async_show_form(
+            step_id="select_edit_interval",
+            data_schema=vol.Schema(
+                {vol.Required("name"): vol.In(interval_names)}
+            ),
+        )
+
+    async def async_step_edit_mileage_interval(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Edit a mileage-based service interval."""
+        errors: dict[str, str] = {}
+        interval = self._service_intervals[self._edit_index]
+
+        if user_input is not None:
+            new_name = user_input["name"].strip()
+            if new_name.lower() != interval["name"].lower() and self._name_exists(new_name):
+                errors["name"] = "duplicate_name"
+            else:
+                self._service_intervals[self._edit_index] = {
+                    "name": new_name,
+                    "type": INTERVAL_TYPE_MILEAGE,
+                    "interval_miles": user_input["interval_miles"],
+                    "last_serviced_mileage": user_input.get(
+                        "last_serviced_mileage", 0
+                    ),
+                }
+                self._edit_index = None
+                return await self.async_step_service_intervals()
+
+        return self.async_show_form(
+            step_id="edit_mileage_interval",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name", default=interval["name"]): str,
+                    vol.Required(
+                        "interval_miles",
+                        default=interval.get("interval_miles", 5000),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=100, max=100000)),
+                    vol.Optional(
+                        "last_serviced_mileage",
+                        default=interval.get("last_serviced_mileage", 0),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=0)),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_edit_time_interval(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Edit a time-based service interval."""
+        errors: dict[str, str] = {}
+        interval = self._service_intervals[self._edit_index]
+
+        if user_input is not None:
+            new_name = user_input["name"].strip()
+            if new_name.lower() != interval["name"].lower() and self._name_exists(new_name):
+                errors["name"] = "duplicate_name"
+            else:
+                self._service_intervals[self._edit_index] = {
+                    "name": new_name,
+                    "type": INTERVAL_TYPE_TIME,
+                    "interval_value": user_input["interval_value"],
+                    "period": user_input["period"],
+                    "recurring": user_input.get("recurring", True),
+                    "last_serviced_date": user_input.get(
+                        "last_serviced_date", ""
+                    ),
+                }
+                self._edit_index = None
+                return await self.async_step_service_intervals()
+
+        return self.async_show_form(
+            step_id="edit_time_interval",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name", default=interval["name"]): str,
+                    vol.Required(
+                        "interval_value",
+                        default=interval.get("interval_value", 6),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=365)),
+                    vol.Required(
+                        "period",
+                        default=interval.get("period", TIME_PERIOD_MONTHS),
+                    ): vol.In(
+                        {
+                            TIME_PERIOD_DAYS: "Days",
+                            TIME_PERIOD_WEEKS: "Weeks",
+                            TIME_PERIOD_MONTHS: "Months",
+                        }
+                    ),
+                    vol.Required(
+                        "recurring",
+                        default=interval.get("recurring", True),
+                    ): bool,
+                    vol.Optional(
+                        "last_serviced_date",
+                        default=interval.get("last_serviced_date", ""),
+                    ): str,
+                }
+            ),
+            errors=errors,
+        )
+
+    # ── Remove flow ───────────────────────────────────────────
 
     async def async_step_remove_service_interval(
         self, user_input: dict[str, Any] | None = None
@@ -327,3 +538,14 @@ class DroneMobileOptionsFlow(config_entries.OptionsFlow):
                 {vol.Required("name"): vol.In(interval_names)}
             ),
         )
+
+    # ── Helpers ────────────────────────────────────────────────
+
+    def _name_exists(self, name: str, exclude_index: int | None = None) -> bool:
+        """Check if a service interval name already exists."""
+        for i, s in enumerate(self._service_intervals):
+            if i == exclude_index:
+                continue
+            if s["name"].lower() == name.lower():
+                return True
+        return False

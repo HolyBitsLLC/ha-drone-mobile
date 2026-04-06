@@ -1,14 +1,22 @@
 """Tests for DroneMobile service interval sensors and buttons."""
 from __future__ import annotations
 
+from datetime import date, timedelta
 from unittest.mock import MagicMock
 
 from custom_components.drone_mobile.const import (
+    INTERVAL_TYPE_MILEAGE,
+    INTERVAL_TYPE_TIME,
+    TIME_PERIOD_DAYS,
+    TIME_PERIOD_MONTHS,
+    TIME_PERIOD_WEEKS,
     UNITS_IMPERIAL,
     UNITS_METRIC,
 )
 from custom_components.drone_mobile.service_sensor import (
     ServiceIntervalSensor,
+    _add_months,
+    _compute_due_date,
     _slugify_name,
 )
 
@@ -30,7 +38,75 @@ def test_slugify_name_already_slug():
     assert _slugify_name("brake_pads") == "brake_pads"
 
 
-# --- ServiceIntervalSensor tests ---
+# --- Helper function tests ---
+
+
+def test_add_months_basic():
+    """Test adding months to a date."""
+    assert _add_months(date(2026, 1, 15), 6) == date(2026, 7, 15)
+
+
+def test_add_months_year_wrap():
+    """Test adding months across year boundary."""
+    assert _add_months(date(2026, 11, 1), 3) == date(2027, 2, 1)
+
+
+def test_add_months_clamp_day():
+    """Test day clamping when month has fewer days."""
+    assert _add_months(date(2026, 1, 31), 1) == date(2026, 2, 28)
+
+
+def test_compute_due_date_months():
+    """Test due date calculation with months."""
+    interval = {
+        "last_serviced_date": "2026-01-15",
+        "period": TIME_PERIOD_MONTHS,
+        "interval_value": 6,
+    }
+    assert _compute_due_date(interval) == date(2026, 7, 15)
+
+
+def test_compute_due_date_weeks():
+    """Test due date calculation with weeks."""
+    interval = {
+        "last_serviced_date": "2026-01-01",
+        "period": TIME_PERIOD_WEEKS,
+        "interval_value": 2,
+    }
+    assert _compute_due_date(interval) == date(2026, 1, 15)
+
+
+def test_compute_due_date_days():
+    """Test due date calculation with days."""
+    interval = {
+        "last_serviced_date": "2026-03-01",
+        "period": TIME_PERIOD_DAYS,
+        "interval_value": 30,
+    }
+    assert _compute_due_date(interval) == date(2026, 3, 31)
+
+
+def test_compute_due_date_empty_date():
+    """Test due date returns None with empty date."""
+    interval = {
+        "last_serviced_date": "",
+        "period": TIME_PERIOD_MONTHS,
+        "interval_value": 6,
+    }
+    assert _compute_due_date(interval) is None
+
+
+def test_compute_due_date_bad_date():
+    """Test due date returns None with invalid date string."""
+    interval = {
+        "last_serviced_date": "not-a-date",
+        "period": TIME_PERIOD_MONTHS,
+        "interval_value": 6,
+    }
+    assert _compute_due_date(interval) is None
+
+
+# --- Mileage ServiceIntervalSensor tests ---
 
 
 def _make_coordinator(odometer: float | None = 45000.0) -> MagicMock:
@@ -43,83 +119,74 @@ def _make_coordinator(odometer: float | None = 45000.0) -> MagicMock:
     return coordinator
 
 
-def test_service_sensor_miles_remaining_imperial():
-    """Test miles remaining calculation in imperial."""
-    interval = {"name": "Oil Change", "interval_miles": 5000, "last_serviced_mileage": 43000}
-    coordinator = _make_coordinator(odometer=45000.0)
-
+def _make_mileage_sensor(
+    interval: dict, units: str = UNITS_IMPERIAL, odometer: float | None = 45000.0
+) -> ServiceIntervalSensor:
+    """Create a mileage sensor without calling __init__ (avoids coordinator super())."""
     sensor = ServiceIntervalSensor.__new__(ServiceIntervalSensor)
     sensor._interval_name = interval["name"]
-    sensor._interval_miles = interval["interval_miles"]
-    sensor._last_serviced_mileage = interval["last_serviced_mileage"]
-    sensor._units = UNITS_IMPERIAL
-    sensor.coordinator = coordinator
+    sensor._interval_type = interval.get("type", INTERVAL_TYPE_MILEAGE)
+    sensor._interval_miles = interval.get("interval_miles", 0)
+    sensor._last_serviced_mileage = interval.get("last_serviced_mileage", 0)
+    sensor._interval_value = interval.get("interval_value", 0)
+    sensor._period = interval.get("period", TIME_PERIOD_MONTHS)
+    sensor._recurring = interval.get("recurring", True)
+    sensor._last_serviced_date = interval.get("last_serviced_date", "")
+    sensor._units = units
+    sensor.coordinator = _make_coordinator(odometer)
+    return sensor
 
-    # 43000 + 5000 - 45000 = 3000 miles remaining
+
+def test_service_sensor_miles_remaining_imperial():
+    """Test miles remaining calculation in imperial."""
+    interval = {
+        "name": "Oil Change", "type": INTERVAL_TYPE_MILEAGE,
+        "interval_miles": 5000, "last_serviced_mileage": 43000,
+    }
+    sensor = _make_mileage_sensor(interval, UNITS_IMPERIAL, 45000.0)
     assert sensor.native_value == 3000.0
 
 
 def test_service_sensor_miles_remaining_metric():
     """Test km remaining calculation in metric."""
-    interval = {"name": "Oil Change", "interval_miles": 5000, "last_serviced_mileage": 43000}
-    coordinator = _make_coordinator(odometer=45000.0)
-
-    sensor = ServiceIntervalSensor.__new__(ServiceIntervalSensor)
-    sensor._interval_name = interval["name"]
-    sensor._interval_miles = interval["interval_miles"]
-    sensor._last_serviced_mileage = interval["last_serviced_mileage"]
-    sensor._units = UNITS_METRIC
-    sensor.coordinator = coordinator
-
-    # 3000 miles * 1.60934 = 4828.0 km
+    interval = {
+        "name": "Oil Change", "type": INTERVAL_TYPE_MILEAGE,
+        "interval_miles": 5000, "last_serviced_mileage": 43000,
+    }
+    sensor = _make_mileage_sensor(interval, UNITS_METRIC, 45000.0)
     assert sensor.native_value == 4828.0
 
 
 def test_service_sensor_overdue():
     """Test overdue service returns negative value."""
-    interval = {"name": "Oil Change", "interval_miles": 5000, "last_serviced_mileage": 38000}
-    coordinator = _make_coordinator(odometer=45000.0)
-
-    sensor = ServiceIntervalSensor.__new__(ServiceIntervalSensor)
-    sensor._interval_name = interval["name"]
-    sensor._interval_miles = interval["interval_miles"]
-    sensor._last_serviced_mileage = interval["last_serviced_mileage"]
-    sensor._units = UNITS_IMPERIAL
-    sensor.coordinator = coordinator
-
-    # 38000 + 5000 - 45000 = -2000 (overdue)
+    interval = {
+        "name": "Oil Change", "type": INTERVAL_TYPE_MILEAGE,
+        "interval_miles": 5000, "last_serviced_mileage": 38000,
+    }
+    sensor = _make_mileage_sensor(interval, UNITS_IMPERIAL, 45000.0)
     assert sensor.native_value == -2000.0
 
 
 def test_service_sensor_no_odometer():
     """Test sensor returns None when odometer is unavailable."""
-    interval = {"name": "Oil Change", "interval_miles": 5000, "last_serviced_mileage": 43000}
-    coordinator = _make_coordinator(odometer=None)
-
-    sensor = ServiceIntervalSensor.__new__(ServiceIntervalSensor)
-    sensor._interval_name = interval["name"]
-    sensor._interval_miles = interval["interval_miles"]
-    sensor._last_serviced_mileage = interval["last_serviced_mileage"]
-    sensor._units = UNITS_IMPERIAL
-    sensor.coordinator = coordinator
-
+    interval = {
+        "name": "Oil Change", "type": INTERVAL_TYPE_MILEAGE,
+        "interval_miles": 5000, "last_serviced_mileage": 43000,
+    }
+    sensor = _make_mileage_sensor(interval, UNITS_IMPERIAL, None)
     assert sensor.native_value is None
 
 
 def test_service_sensor_extra_attributes():
-    """Test extra state attributes include overdue flag."""
-    interval = {"name": "Oil Change", "interval_miles": 5000, "last_serviced_mileage": 43000}
-    coordinator = _make_coordinator(odometer=45000.0)
-
-    sensor = ServiceIntervalSensor.__new__(ServiceIntervalSensor)
-    sensor._interval_name = interval["name"]
-    sensor._interval_miles = interval["interval_miles"]
-    sensor._last_serviced_mileage = interval["last_serviced_mileage"]
-    sensor._units = UNITS_IMPERIAL
-    sensor.coordinator = coordinator
-
+    """Test extra state attributes for mileage interval."""
+    interval = {
+        "name": "Oil Change", "type": INTERVAL_TYPE_MILEAGE,
+        "interval_miles": 5000, "last_serviced_mileage": 43000,
+    }
+    sensor = _make_mileage_sensor(interval, UNITS_IMPERIAL, 45000.0)
     attrs = sensor.extra_state_attributes
     assert attrs["service_name"] == "Oil Change"
+    assert attrs["type"] == INTERVAL_TYPE_MILEAGE
     assert attrs["interval_miles"] == 5000
     assert attrs["last_serviced_mileage"] == 43000
     assert attrs["overdue"] is False
@@ -127,18 +194,124 @@ def test_service_sensor_extra_attributes():
 
 def test_service_sensor_overdue_attribute():
     """Test overdue attribute is True when negative remaining."""
-    interval = {"name": "Tire Rotation", "interval_miles": 5000, "last_serviced_mileage": 38000}
-    coordinator = _make_coordinator(odometer=45000.0)
-
-    sensor = ServiceIntervalSensor.__new__(ServiceIntervalSensor)
-    sensor._interval_name = interval["name"]
-    sensor._interval_miles = interval["interval_miles"]
-    sensor._last_serviced_mileage = interval["last_serviced_mileage"]
-    sensor._units = UNITS_IMPERIAL
-    sensor.coordinator = coordinator
-
+    interval = {
+        "name": "Tire Rotation", "type": INTERVAL_TYPE_MILEAGE,
+        "interval_miles": 5000, "last_serviced_mileage": 38000,
+    }
+    sensor = _make_mileage_sensor(interval, UNITS_IMPERIAL, 45000.0)
     attrs = sensor.extra_state_attributes
     assert attrs["overdue"] is True
+
+
+# --- Time-based ServiceIntervalSensor tests ---
+
+
+def test_time_sensor_days_remaining():
+    """Test days remaining for a time-based interval."""
+    # Work backwards: if last serviced 20 days ago with 30-day interval, 10 days remain
+    last_date = (date.today() - timedelta(days=20)).isoformat()
+    interval = {
+        "name": "Cabin Filter",
+        "type": INTERVAL_TYPE_TIME,
+        "interval_value": 30,
+        "period": TIME_PERIOD_DAYS,
+        "recurring": True,
+        "last_serviced_date": last_date,
+    }
+    sensor = _make_mileage_sensor(interval, UNITS_IMPERIAL, 45000.0)
+    assert sensor.native_value == 10
+
+
+def test_time_sensor_overdue():
+    """Test time-based interval overdue returns negative days."""
+    last_date = (date.today() - timedelta(days=40)).isoformat()
+    interval = {
+        "name": "Cabin Filter",
+        "type": INTERVAL_TYPE_TIME,
+        "interval_value": 30,
+        "period": TIME_PERIOD_DAYS,
+        "recurring": True,
+        "last_serviced_date": last_date,
+    }
+    sensor = _make_mileage_sensor(interval, UNITS_IMPERIAL, 45000.0)
+    assert sensor.native_value == -10
+
+
+def test_time_sensor_no_date():
+    """Test time sensor returns None when no last_serviced_date."""
+    interval = {
+        "name": "Annual Inspection",
+        "type": INTERVAL_TYPE_TIME,
+        "interval_value": 12,
+        "period": TIME_PERIOD_MONTHS,
+        "recurring": True,
+        "last_serviced_date": "",
+    }
+    sensor = _make_mileage_sensor(interval, UNITS_IMPERIAL, 45000.0)
+    assert sensor.native_value is None
+
+
+def test_time_sensor_extra_attributes():
+    """Test extra attributes for time-based interval."""
+    last_date = "2026-01-15"
+    interval = {
+        "name": "Annual Inspection",
+        "type": INTERVAL_TYPE_TIME,
+        "interval_value": 12,
+        "period": TIME_PERIOD_MONTHS,
+        "recurring": True,
+        "last_serviced_date": last_date,
+    }
+    sensor = _make_mileage_sensor(interval, UNITS_IMPERIAL, 45000.0)
+    attrs = sensor.extra_state_attributes
+    assert attrs["service_name"] == "Annual Inspection"
+    assert attrs["type"] == INTERVAL_TYPE_TIME
+    assert attrs["interval_value"] == 12
+    assert attrs["period"] == TIME_PERIOD_MONTHS
+    assert attrs["recurring"] is True
+    assert attrs["last_serviced_date"] == "2026-01-15"
+    assert attrs["due_date"] == "2027-01-15"
+
+
+def test_time_sensor_weeks():
+    """Test time sensor with weeks period."""
+    last_date = (date.today() - timedelta(weeks=1)).isoformat()
+    interval = {
+        "name": "Check Tire Pressure",
+        "type": INTERVAL_TYPE_TIME,
+        "interval_value": 2,
+        "period": TIME_PERIOD_WEEKS,
+        "recurring": True,
+        "last_serviced_date": last_date,
+    }
+    sensor = _make_mileage_sensor(interval, UNITS_IMPERIAL, 45000.0)
+    # 2 weeks from 1 week ago = 1 week from now = 7 days
+    assert sensor.native_value == 7
+
+
+def test_time_sensor_unit_is_days():
+    """Test time sensor unit of measurement is days."""
+    interval = {
+        "name": "Test",
+        "type": INTERVAL_TYPE_TIME,
+        "interval_value": 30,
+        "period": TIME_PERIOD_DAYS,
+        "last_serviced_date": "2026-01-01",
+    }
+    sensor = _make_mileage_sensor(interval)
+    from homeassistant.const import UnitOfTime
+    assert sensor.native_unit_of_measurement == UnitOfTime.DAYS
+
+
+# --- Legacy interval backward compat ---
+
+
+def test_legacy_interval_defaults_to_mileage():
+    """Test that an interval without a 'type' field defaults to mileage."""
+    interval = {"name": "Oil Change", "interval_miles": 5000, "last_serviced_mileage": 43000}
+    sensor = _make_mileage_sensor(interval, UNITS_IMPERIAL, 45000.0)
+    assert sensor._interval_type == INTERVAL_TYPE_MILEAGE
+    assert sensor.native_value == 3000.0
 
 
 # --- Config flow service interval options tests ---
