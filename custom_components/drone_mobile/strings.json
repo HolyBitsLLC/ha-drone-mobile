@@ -1,0 +1,41 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "DroneMobile Account",
+        "description": "Enter your DroneMobile credentials.",
+        "data": {
+          "username": "Email",
+          "password": "Password"
+        }
+      },
+      "select_vehicle": {
+        "title": "Select Vehicle",
+        "description": "Choose the vehicle to set up.",
+        "data": {
+          "vehicle_id": "Vehicle"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to DroneMobile API.",
+      "invalid_auth": "Invalid email or password.",
+      "no_vehicles": "No vehicles found on this account.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This vehicle is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "DroneMobile Options",
+        "data": {
+          "units": "Unit System",
+          "update_interval": "Update Interval (minutes)"
+        }
+      }
+    }
+  }
+}

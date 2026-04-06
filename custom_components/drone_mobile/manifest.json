@@ -1,0 +1,12 @@
+{
+  "domain": "drone_mobile",
+  "name": "DroneMobile",
+  "codeowners": ["@HolyBitsLLC"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/HolyBitsLLC/ha-drone-mobile",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/HolyBitsLLC/ha-drone-mobile/issues",
+  "requirements": ["drone_mobile>=0.3.0"],
+  "version": "1.0.0"
+}
