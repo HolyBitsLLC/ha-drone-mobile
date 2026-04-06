@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from unittest.mock import MagicMock
 
 from custom_components.drone_mobile import _migrate_service_intervals
+from custom_components.drone_mobile.binary_sensor import ServiceIntervalOverdueBinarySensor
 from custom_components.drone_mobile.config_flow import _parse_csv_intervals
 from custom_components.drone_mobile.const import (
     INTERVAL_TYPE_MILEAGE,
@@ -222,6 +223,71 @@ def test_service_sensor_overdue_attribute():
     sensor = _make_mileage_sensor(interval, UNITS_IMPERIAL, 45000.0)
     attrs = sensor.extra_state_attributes
     assert attrs["overdue"] is True
+
+
+def _make_overdue_binary_sensor(
+    interval: dict, odometer: float | None = 45000.0
+) -> ServiceIntervalOverdueBinarySensor:
+    """Create overdue binary sensor without calling __init__."""
+    sensor = ServiceIntervalOverdueBinarySensor.__new__(ServiceIntervalOverdueBinarySensor)
+    sensor._interval_name = interval["name"]
+    sensor._interval_type = interval.get("type", INTERVAL_TYPE_MILEAGE)
+    sensor.coordinator = _make_coordinator(odometer)
+
+    mock_entry = MagicMock()
+    mock_entry.options = {"service_intervals": [interval]}
+    sensor._entry = mock_entry
+    return sensor
+
+
+def test_overdue_binary_sensor_mileage_not_overdue():
+    """Mileage overdue binary sensor stays off when interval is not overdue."""
+    interval = {
+        "name": "Oil Change",
+        "type": INTERVAL_TYPE_MILEAGE,
+        "interval_miles": 5000,
+        "last_serviced_mileage": 43000,
+    }
+    sensor = _make_overdue_binary_sensor(interval, 45000.0)
+    assert sensor.is_on is False
+
+
+def test_overdue_binary_sensor_mileage_overdue():
+    """Mileage overdue binary sensor turns on when overdue."""
+    interval = {
+        "name": "Oil Change",
+        "type": INTERVAL_TYPE_MILEAGE,
+        "interval_miles": 5000,
+        "last_serviced_mileage": 38000,
+    }
+    sensor = _make_overdue_binary_sensor(interval, 45000.0)
+    assert sensor.is_on is True
+
+
+def test_overdue_binary_sensor_time_not_overdue():
+    """Time-based overdue binary sensor stays off before due date."""
+    interval = {
+        "name": "Cabin Filter",
+        "type": INTERVAL_TYPE_TIME,
+        "interval_value": 30,
+        "period": TIME_PERIOD_DAYS,
+        "last_serviced_date": (date.today() - timedelta(days=10)).isoformat(),
+    }
+    sensor = _make_overdue_binary_sensor(interval)
+    assert sensor.is_on is False
+
+
+def test_overdue_binary_sensor_time_overdue():
+    """Time-based overdue binary sensor turns on when due date passed."""
+    interval = {
+        "name": "Cabin Filter",
+        "type": INTERVAL_TYPE_TIME,
+        "interval_value": 30,
+        "period": TIME_PERIOD_DAYS,
+        "last_serviced_date": (date.today() - timedelta(days=40)).isoformat(),
+    }
+    sensor = _make_overdue_binary_sensor(interval)
+    assert sensor.is_on is True
 
 
 # --- Time-based ServiceIntervalSensor tests ---
