@@ -2,8 +2,7 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
 
 permissions:
   contents: write
@@ -11,9 +10,76 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Only run when CI would pass (lint + test + hassfest)
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get current version from manifest
+        id: current
+        run: |
+          version=$(jq -r '.version' custom_components/drone_mobile/manifest.json)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Determine next version
+        id: next
+        run: |
+          current="${{ steps.current.outputs.version }}"
+          IFS='.' read -r major minor patch <<< "$current"
+
+          # Check commit messages since last tag for version bump type
+          last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$last_tag" ]; then
+            range="HEAD"
+          else
+            range="${last_tag}..HEAD"
+          fi
+
+          commits=$(git log "$range" --pretty=format:"%s" 2>/dev/null || echo "")
+          if echo "$commits" | grep -qiE "^BREAKING CHANGE|^[a-z]+(\(.+\))?!:"; then
+            major=$((major + 1)); minor=0; patch=0
+          elif echo "$commits" | grep -qiE "^feat"; then
+            minor=$((minor + 1)); patch=0
+          else
+            patch=$((patch + 1))
+          fi
+
+          next="${major}.${minor}.${patch}"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "Bumping $current -> $next"
+
+      - name: Check if release needed
+        id: check
+        run: |
+          tag="v${{ steps.next.outputs.version }}"
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update manifest version
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          version="${{ steps.next.outputs.version }}"
+          jq --arg v "$version" '.version = $v' custom_components/drone_mobile/manifest.json > tmp.json
+          mv tmp.json custom_components/drone_mobile/manifest.json
+
+      - name: Commit version bump
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          version="${{ steps.next.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add custom_components/drone_mobile/manifest.json
+          git diff --cached --quiet || git commit -m "chore: bump version to ${version}"
+          git tag "v${version}"
+          git push origin main --tags
+
       - name: Create GitHub Release
+        if: steps.check.outputs.skip == 'false'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.next.outputs.version }}
           generate_release_notes: true
