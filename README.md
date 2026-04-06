@@ -20,7 +20,7 @@ This integration uses an unofficial, unsupported API from DroneMobile. It is sub
 - **GPS Tracking** — vehicle location on the HA map
 - **Sensors** — battery voltage, battery %, odometer, fuel level, interior/exterior temperature, last update time
 - **Binary Sensors** — engine running state, lock state
-- **Service Intervals** — track mileage-based maintenance (oil changes, tire rotations, etc.) with remaining distance sensors and one-tap "mark serviced" buttons
+- **Service Intervals** — track mileage/time-based maintenance with remaining sensors, overdue binary sensors, and one-tap "mark serviced" buttons
 - **Imperial / Metric** — configurable unit system
 - **Config Flow** — full UI-based setup with vehicle selection
 - **Multi-Vehicle** — add each vehicle as a separate config entry
@@ -72,6 +72,7 @@ This integration uses an unofficial, unsupported API from DroneMobile. It is sub
 |--------|-------------|
 | Engine | Whether the engine is running |
 | Locked | Whether doors are unlocked (problem state) |
+| *{Service Name}* Overdue | On when that maintenance interval is overdue |
 
 ### Switches
 | Entity | Description |
@@ -93,11 +94,12 @@ This integration uses an unofficial, unsupported API from DroneMobile. It is sub
 | Location | Vehicle GPS position on map |
 
 ### Service Intervals
-Mileage-based maintenance tracking. Configured in integration options.
+Mileage/time-based maintenance tracking. Configured in integration options.
 
 | Entity Type | Description |
 |-------------|-------------|
 | Sensor: *{Service Name}* Remaining | Miles/km remaining until service is due (negative = overdue) |
+| Binary Sensor: *{Service Name}* Overdue | Turns on when the interval is overdue |
 | Button: Mark *{Service Name}* Serviced | Resets the interval counter to the current odometer reading |
 
 #### Setting Up Service Intervals
@@ -108,7 +110,17 @@ Mileage-based maintenance tracking. Configured in integration options.
 4. Repeat for each service type (tire rotation, brake pads, transmission fluid, etc.)
 5. Click **Done** to save
 
-Each interval creates a sensor showing remaining distance and a button to mark the service as completed. When you press "Mark Serviced", the last-serviced mileage is updated to the current odometer reading.
+Each interval creates a remaining sensor, an overdue binary sensor, and a button to mark the service as completed. When you press "Mark Serviced", the last-serviced mileage/date is updated to current values.
+
+#### Overdue Alerts in Home Assistant
+
+Use the *{Service Name}* Overdue binary sensors in automations to alert when maintenance is past due.
+
+Example automation trigger:
+1. Trigger type: **State**
+2. Entity: `binary_sensor.{service_name}_overdue`
+3. To: `on`
+4. Action: notify your phone or create a persistent notification
 
 ## Development
 

@@ -13,6 +13,7 @@ import pytest
 _MOCK_MODULES = [
     "homeassistant",
     "homeassistant.components",
+    "homeassistant.components.binary_sensor",
     "homeassistant.components.sensor",
     "homeassistant.config_entries",
     "homeassistant.const",
@@ -21,6 +22,7 @@ _MOCK_MODULES = [
     "homeassistant.helpers",
     "homeassistant.helpers.device_registry",
     "homeassistant.helpers.entity",
+    "homeassistant.helpers.entity_platform",
     "homeassistant.helpers.entity_registry",
     "homeassistant.helpers.selector",
     "homeassistant.helpers.update_coordinator",
@@ -62,6 +64,9 @@ class _StubEntity:
 if "homeassistant.components.sensor" in _installed_mocks:
     sys.modules["homeassistant.components.sensor"].SensorEntity = _StubEntity
     sys.modules["homeassistant.components.sensor"].SensorStateClass = MagicMock()
+
+if "homeassistant.components.binary_sensor" in _installed_mocks:
+    sys.modules["homeassistant.components.binary_sensor"].BinarySensorEntity = _StubEntity
 
 if "homeassistant.helpers.update_coordinator" in _installed_mocks:
     sys.modules["homeassistant.helpers.update_coordinator"].CoordinatorEntity = _StubEntity
