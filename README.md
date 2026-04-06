@@ -20,8 +20,10 @@ This integration uses an unofficial, unsupported API from DroneMobile. It is sub
 - **GPS Tracking** — vehicle location on the HA map
 - **Sensors** — battery voltage, battery %, odometer, fuel level, interior/exterior temperature, last update time
 - **Binary Sensors** — engine running state, lock state
+- **Service Intervals** — track mileage-based maintenance (oil changes, tire rotations, etc.) with remaining distance sensors and one-tap "mark serviced" buttons
 - **Imperial / Metric** — configurable unit system
 - **Config Flow** — full UI-based setup with vehicle selection
+- **Multi-Vehicle** — add each vehicle as a separate config entry
 
 ## Requirements
 
@@ -89,6 +91,24 @@ This integration uses an unofficial, unsupported API from DroneMobile. It is sub
 | Entity | Description |
 |--------|-------------|
 | Location | Vehicle GPS position on map |
+
+### Service Intervals
+Mileage-based maintenance tracking. Configured in integration options.
+
+| Entity Type | Description |
+|-------------|-------------|
+| Sensor: *{Service Name}* Remaining | Miles/km remaining until service is due (negative = overdue) |
+| Button: Mark *{Service Name}* Serviced | Resets the interval counter to the current odometer reading |
+
+#### Setting Up Service Intervals
+
+1. Go to **Settings → Devices & Services → DroneMobile → Configure**
+2. Select **Service Intervals**
+3. **Add Service Interval** — enter a name (e.g. "Oil Change"), the interval in miles (e.g. 5000), and the odometer reading when last serviced (0 if unknown)
+4. Repeat for each service type (tire rotation, brake pads, transmission fluid, etc.)
+5. Click **Done** to save
+
+Each interval creates a sensor showing remaining distance and a button to mark the service as completed. When you press "Mark Serviced", the last-serviced mileage is updated to the current odometer reading.
 
 ## Development
 

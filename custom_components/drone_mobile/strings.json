@@ -31,11 +31,45 @@
     "step": {
       "init": {
         "title": "DroneMobile Options",
+        "menu_options": {
+          "general": "General Settings",
+          "service_intervals": "Service Intervals"
+        }
+      },
+      "general": {
+        "title": "General Settings",
         "data": {
           "units": "Unit System",
           "update_interval": "Update Interval (minutes)"
         }
+      },
+      "service_intervals": {
+        "title": "Service Intervals",
+        "description": "Manage mileage-based service reminders.",
+        "menu_options": {
+          "add_service_interval": "Add Service Interval",
+          "remove_service_interval": "Remove Service Interval",
+          "done_service_intervals": "Done"
+        }
+      },
+      "add_service_interval": {
+        "title": "Add Service Interval",
+        "description": "Define a recurring service based on mileage.",
+        "data": {
+          "name": "Service Name (e.g. Oil Change)",
+          "interval_miles": "Interval (miles)",
+          "last_serviced_mileage": "Last Serviced At (odometer miles, 0 if unknown)"
+        }
+      },
+      "remove_service_interval": {
+        "title": "Remove Service Interval",
+        "data": {
+          "name": "Service to Remove"
+        }
       }
+    },
+    "error": {
+      "duplicate_name": "A service interval with this name already exists."
     }
   }
 }

@@ -1,6 +1,8 @@
 """Sensor platform for DroneMobile."""
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -17,9 +19,16 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_UNITS, DEFAULT_UNITS, DOMAIN, UNITS_METRIC
+from .const import (
+    CONF_SERVICE_INTERVALS,
+    CONF_UNITS,
+    DEFAULT_UNITS,
+    DOMAIN,
+    UNITS_METRIC,
+)
 from .coordinator import DroneMobileCoordinator
 from .entity import DroneMobileEntity
+from .service_sensor import ServiceIntervalSensor
 
 SENSOR_DESCRIPTIONS: list[SensorEntityDescription] = [
     SensorEntityDescription(
@@ -87,9 +96,17 @@ async def async_setup_entry(
     """Set up DroneMobile sensors."""
     coordinator: DroneMobileCoordinator = hass.data[DOMAIN][entry.entry_id]
     units = entry.options.get(CONF_UNITS, DEFAULT_UNITS)
-    async_add_entities(
+
+    entities: list[SensorEntity] = [
         DroneMobileSensor(coordinator, desc, units) for desc in SENSOR_DESCRIPTIONS
-    )
+    ]
+
+    # Add service interval sensors
+    intervals: list[dict[str, Any]] = entry.options.get(CONF_SERVICE_INTERVALS, [])
+    for interval in intervals:
+        entities.append(ServiceIntervalSensor(coordinator, interval, units))
+
+    async_add_entities(entities)
 
 
 class DroneMobileSensor(DroneMobileEntity, SensorEntity):

@@ -6,6 +6,7 @@ MANUFACTURER = "DroneMobile (Firstech/Compustar)"
 CONF_VEHICLE_ID = "vehicle_id"
 CONF_UNITS = "units"
 CONF_UPDATE_INTERVAL = "update_interval"
+CONF_SERVICE_INTERVALS = "service_intervals"
 
 DEFAULT_UNITS = "imperial"
 DEFAULT_UPDATE_INTERVAL = 5  # minutes
