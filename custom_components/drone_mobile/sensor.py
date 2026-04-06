@@ -104,7 +104,7 @@ async def async_setup_entry(
     # Add service interval sensors
     intervals: list[dict[str, Any]] = entry.options.get(CONF_SERVICE_INTERVALS, [])
     for interval in intervals:
-        entities.append(ServiceIntervalSensor(coordinator, interval, units))
+        entities.append(ServiceIntervalSensor(coordinator, entry, interval, units))
 
     async_add_entities(entities)
 

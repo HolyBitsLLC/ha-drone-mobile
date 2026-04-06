@@ -128,14 +128,13 @@ def _make_mileage_sensor(
     sensor = ServiceIntervalSensor.__new__(ServiceIntervalSensor)
     sensor._interval_name = interval["name"]
     sensor._interval_type = interval.get("type", INTERVAL_TYPE_MILEAGE)
-    sensor._interval_miles = interval.get("interval_miles", 0)
-    sensor._last_serviced_mileage = interval.get("last_serviced_mileage", 0)
-    sensor._interval_value = interval.get("interval_value", 0)
-    sensor._period = interval.get("period", TIME_PERIOD_MONTHS)
-    sensor._recurring = interval.get("recurring", True)
-    sensor._last_serviced_date = interval.get("last_serviced_date", "")
     sensor._units = units
     sensor.coordinator = _make_coordinator(odometer)
+
+    # Provide a mock config entry with this interval in options
+    mock_entry = MagicMock()
+    mock_entry.options = {"service_intervals": [interval]}
+    sensor._entry = mock_entry
     return sensor
 
 

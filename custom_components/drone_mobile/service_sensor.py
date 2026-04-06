@@ -11,6 +11,7 @@ from homeassistant.components.sensor import (
 from homeassistant.const import UnitOfLength, UnitOfTime
 
 from .const import (
+    CONF_SERVICE_INTERVALS,
     INTERVAL_TYPE_MILEAGE,
     INTERVAL_TYPE_TIME,
     TIME_PERIOD_MONTHS,
@@ -67,27 +68,27 @@ class ServiceIntervalSensor(DroneMobileEntity, SensorEntity):
     def __init__(
         self,
         coordinator: DroneMobileCoordinator,
+        entry: Any,
         interval: dict[str, Any],
         units: str,
     ) -> None:
         """Initialize the service interval sensor."""
+        self._entry = entry
         self._interval_name = interval["name"]
         self._interval_type = interval.get("type", INTERVAL_TYPE_MILEAGE)
         self._units = units
 
-        # Mileage fields
-        self._interval_miles = interval.get("interval_miles", 0)
-        self._last_serviced_mileage = interval.get("last_serviced_mileage", 0)
-
-        # Time fields
-        self._interval_value = interval.get("interval_value", 0)
-        self._period = interval.get("period", TIME_PERIOD_MONTHS)
-        self._recurring = interval.get("recurring", True)
-        self._last_serviced_date = interval.get("last_serviced_date", "")
-
         slug = _slugify_name(self._interval_name)
         super().__init__(coordinator, f"service_{slug}")
         self._attr_name = f"{self._interval_name} Remaining"
+
+    def _get_live_interval(self) -> dict[str, Any] | None:
+        """Re-read this interval from the live config entry options."""
+        intervals = self._entry.options.get(CONF_SERVICE_INTERVALS, [])
+        for iv in intervals:
+            if iv.get("name") == self._interval_name:
+                return iv
+        return None
 
     @property
     def native_value(self) -> float | None:
@@ -98,14 +99,18 @@ class ServiceIntervalSensor(DroneMobileEntity, SensorEntity):
 
     def _mileage_remaining(self) -> float | None:
         """Compute miles or km remaining."""
+        iv = self._get_live_interval()
+        if iv is None:
+            return None
+
         status = self.coordinator.data.get("status", {})
         odometer = status.get("odometer")
         if odometer is None:
             return None
 
-        miles_remaining = (
-            self._last_serviced_mileage + self._interval_miles - float(odometer)
-        )
+        interval_miles = iv.get("interval_miles", 0)
+        last_serviced = iv.get("last_serviced_mileage", 0)
+        miles_remaining = last_serviced + interval_miles - float(odometer)
 
         if self._units == UNITS_METRIC:
             return round(miles_remaining * 1.60934, 1)
@@ -113,10 +118,14 @@ class ServiceIntervalSensor(DroneMobileEntity, SensorEntity):
 
     def _time_remaining(self) -> float | None:
         """Compute days remaining until service is due."""
+        iv = self._get_live_interval()
+        if iv is None:
+            return None
+
         due = _compute_due_date({
-            "last_serviced_date": self._last_serviced_date,
-            "period": self._period,
-            "interval_value": self._interval_value,
+            "last_serviced_date": iv.get("last_serviced_date", ""),
+            "period": iv.get("period", TIME_PERIOD_MONTHS),
+            "interval_value": iv.get("interval_value", 0),
         })
         if due is None:
             return None
@@ -134,26 +143,27 @@ class ServiceIntervalSensor(DroneMobileEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
+        iv = self._get_live_interval() or {}
         attrs: dict[str, Any] = {
             "service_name": self._interval_name,
             "type": self._interval_type,
         }
 
         if self._interval_type == INTERVAL_TYPE_TIME:
-            attrs["interval_value"] = self._interval_value
-            attrs["period"] = self._period
-            attrs["recurring"] = self._recurring
-            attrs["last_serviced_date"] = self._last_serviced_date
+            attrs["interval_value"] = iv.get("interval_value", 0)
+            attrs["period"] = iv.get("period", TIME_PERIOD_MONTHS)
+            attrs["recurring"] = iv.get("recurring", True)
+            attrs["last_serviced_date"] = iv.get("last_serviced_date", "")
             due = _compute_due_date({
-                "last_serviced_date": self._last_serviced_date,
-                "period": self._period,
-                "interval_value": self._interval_value,
+                "last_serviced_date": iv.get("last_serviced_date", ""),
+                "period": iv.get("period", TIME_PERIOD_MONTHS),
+                "interval_value": iv.get("interval_value", 0),
             })
             if due:
                 attrs["due_date"] = due.isoformat()
         else:
-            attrs["interval_miles"] = self._interval_miles
-            attrs["last_serviced_mileage"] = self._last_serviced_mileage
+            attrs["interval_miles"] = iv.get("interval_miles", 0)
+            attrs["last_serviced_mileage"] = iv.get("last_serviced_mileage", 0)
 
         value = self.native_value
         if value is not None:

@@ -1,6 +1,7 @@
 """Button platform for DroneMobile — mark service as completed."""
 from __future__ import annotations
 
+import copy
 import logging
 from datetime import date
 from typing import Any
@@ -56,8 +57,8 @@ class ServiceResetButton(DroneMobileEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         """Handle the button press — reset the interval to current odometer/date."""
-        intervals: list[dict[str, Any]] = list(
-            self._entry.options.get(CONF_SERVICE_INTERVALS, [])
+        intervals: list[dict[str, Any]] = copy.deepcopy(
+            list(self._entry.options.get(CONF_SERVICE_INTERVALS, []))
         )
 
         if self._interval_type == INTERVAL_TYPE_TIME:
@@ -98,3 +99,6 @@ class ServiceResetButton(DroneMobileEntity, ButtonEntity):
         self.hass.config_entries.async_update_entry(
             self._entry, options=new_options
         )
+
+        # Force all entities to pick up the new options immediately
+        await self.coordinator.async_request_refresh()
